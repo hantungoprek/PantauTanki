@@ -1,6 +1,7 @@
 package com.pantautanki.app
 
 import android.os.Bundle
+import android.content.Context
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -16,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -23,6 +25,12 @@ import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.roundToInt
+
+private enum class ThemeMode(val label: String) {
+    SYSTEM("Sistem"),
+    LIGHT("Terang"),
+    DARK("Gelap")
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -33,12 +41,28 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun PantauTankiApp() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val preferences = remember {
+        context.getSharedPreferences("pantautanki_preferences", Context.MODE_PRIVATE)
+    }
+    var themeMode by remember {
+        mutableStateOf(
+            runCatching {
+                ThemeMode.valueOf(preferences.getString("theme_mode", ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name)
+            }.getOrDefault(ThemeMode.SYSTEM)
+        )
+    }
+    val isSystemDark = isSystemInDarkTheme()
+    val useDarkTheme = when (themeMode) {
+        ThemeMode.SYSTEM -> isSystemDark
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
     val currency = remember { NumberFormat.getCurrencyInstance(Locale("id", "ID")).apply {
         maximumFractionDigits = 0
         currency = java.util.Currency.getInstance("IDR")
     }}
     var selectedTab by remember { mutableIntStateOf(0) }
-    val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
     val db = remember { AppDb(context) }
     var vehicles by remember { mutableStateOf(emptyList<Vehicle>()) }
@@ -65,21 +89,31 @@ fun PantauTankiApp() {
     } else 0.0
 
     MaterialTheme(
-        colorScheme = lightColorScheme(
-            primary = Color(0xFF176B5B),
-            secondary = Color(0xFF5C6F68),
-            background = Color(0xFFF7F8FA),
-            surface = Color.White
-        )
+        colorScheme = if (useDarkTheme) {
+            darkColorScheme(
+                primary = Color(0xFF62D4BE),
+                onPrimary = Color(0xFF00382F),
+                secondary = Color(0xFFB0CCC4),
+                background = Color(0xFF101412),
+                surface = Color(0xFF171C1A)
+            )
+        } else {
+            lightColorScheme(
+                primary = Color(0xFF176B5B),
+                secondary = Color(0xFF5C6F68),
+                background = Color(0xFFF7F8FA),
+                surface = Color.White
+            )
+        }
     ) {
         Scaffold(
-            containerColor = Color(0xFFF7F8FA),
+            containerColor = MaterialTheme.colorScheme.background,
             topBar = {
                 TopAppBar(
                     title = {
                         Column {
                             Text("PantauTanki", fontWeight = FontWeight.Bold)
-                            Text("100% offline", fontSize = 11.sp, color = Color.Gray)
+                            Text("100% offline", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     },
                     actions = {
@@ -93,8 +127,8 @@ fun PantauTankiApp() {
                 if (selectedTab == 0) {
                     FloatingActionButton(
                         onClick = { showAddFuel = true },
-                        containerColor = Color(0xFF176B5B),
-                        contentColor = Color.White
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     ) { Icon(Icons.Default.Add, "Tambah pengisian") }
                 }
             },
@@ -148,6 +182,11 @@ fun PantauTankiApp() {
                     }
                 )
                 3 -> MoreScreen(
+                    themeMode = themeMode,
+                    onThemeModeChange = {
+                        themeMode = it
+                        preferences.edit().putString("theme_mode", it.name).apply()
+                    },
                     onAddFuel = { showAddFuel = true },
                     onAddVehicle = { showAddVehicle = true }
                 )
@@ -215,10 +254,10 @@ fun PantauTankiApp() {
 fun EmptyHomeScreen(onAddVehicle: () -> Unit) {
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Default.DirectionsCar, null, modifier = Modifier.size(64.dp), tint = Color(0xFF176B5B))
+            Icon(Icons.Default.DirectionsCar, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(12.dp))
             Text("Belum ada kendaraan", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            Text("Buat profil kendaraan pertama untuk mulai mencatat BBM.", color = Color.Gray)
+            Text("Buat profil kendaraan pertama untuk mulai mencatat BBM.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(16.dp))
             Button(onClick = onAddVehicle) { Text("Tambah kendaraan") }
         }
@@ -243,7 +282,7 @@ fun HomeScreen(
             Card(shape = RoundedCornerShape(22.dp)) {
                 Column(Modifier.padding(20.dp)) {
                     Text(vehicle.name, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                    Text("${vehicle.odometer} km", color = Color.Gray)
+                    Text("${vehicle.odometer} km", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(18.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Metric("Konsumsi", if (avgConsumption > 0) "%.2f km/L".format(avgConsumption) else "Belum ada data")
@@ -266,7 +305,7 @@ fun HomeScreen(
                 Card(shape = RoundedCornerShape(18.dp)) {
                     Column(Modifier.padding(20.dp)) {
                         Text("Belum ada pengisian BBM.", fontWeight = FontWeight.SemiBold)
-                        Text("Tekan tombol + untuk mencatat pengisian pertama.", color = Color.Gray)
+                        Text("Tekan tombol + untuk mencatat pengisian pertama.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -276,7 +315,7 @@ fun HomeScreen(
                     headlineContent = { Text("${e.liters} L") },
                     supportingContent = { Text("${e.odometer} km • ${currency.format(e.total)}") },
                     leadingContent = {
-                        Icon(Icons.Default.LocalGasStation, null, tint = Color(0xFF176B5B))
+                        Icon(Icons.Default.LocalGasStation, null, tint = MaterialTheme.colorScheme.primary)
                     }
                 )
             }
@@ -287,7 +326,7 @@ fun HomeScreen(
 @Composable
 fun Metric(label: String, value: String) {
     Column {
-        Text(label, fontSize = 12.sp, color = Color.Gray)
+        Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold)
     }
 }
@@ -296,7 +335,7 @@ fun Metric(label: String, value: String) {
 fun SummaryCard(title: String, value: String, modifier: Modifier = Modifier) {
     Card(modifier, shape = RoundedCornerShape(18.dp)) {
         Column(Modifier.padding(16.dp)) {
-            Text(title, fontSize = 12.sp, color = Color.Gray)
+            Text(title, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(5.dp))
             Text(value, fontSize = 17.sp, fontWeight = FontWeight.Bold)
         }
@@ -318,7 +357,7 @@ fun StatsScreen(vehicle: Vehicle, entries: List<FuelEntry>, currency: NumberForm
     ) {
         item {
             Text("Statistik ${vehicle.name}", fontSize = 23.sp, fontWeight = FontWeight.Bold)
-            Text("Semua data lokal di perangkat ini.", color = Color.Gray)
+            Text("Semua data lokal di perangkat ini.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         item { SummaryCard("Rata-rata konsumsi", if (kmPerL > 0) "%.2f km/L".format(kmPerL) else "Belum cukup data") }
         item { SummaryCard("Total BBM", "%.1f L".format(liters)) }
@@ -340,7 +379,7 @@ fun VehicleScreen(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column {
                 Text("Kendaraan", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                Text("Setiap profil menyimpan track record sendiri.", color = Color.Gray)
+                Text("Setiap profil menyimpan track record sendiri.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(onClick = onAdd) { Icon(Icons.Default.Add, "Tambah kendaraan") }
         }
@@ -356,8 +395,8 @@ fun VehicleScreen(
                         Spacer(Modifier.width(14.dp))
                         Column(Modifier.weight(1f)) {
                             Text(v.name, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                            Text("${v.odometer} km • ${v.tankCapacity} L", color = Color.Gray)
-                            if (v.id == activeId) Text("Kendaraan aktif", color = Color(0xFF176B5B), fontSize = 12.sp)
+                            Text("${v.odometer} km • ${v.tankCapacity} L", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (v.id == activeId) Text("Kendaraan aktif", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
                         }
                         IconButton(onClick = { deleteTarget = v }) {
                             Icon(Icons.Default.DeleteOutline, "Hapus")
@@ -381,12 +420,26 @@ fun VehicleScreen(
 }
 
 @Composable
-fun MoreScreen(onAddFuel: () -> Unit, onAddVehicle: () -> Unit) {
+fun MoreScreen(
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
+    onAddFuel: () -> Unit,
+    onAddVehicle: () -> Unit
+) {
+    var showThemePicker by remember { mutableStateOf(false) }
+
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Text("Lainnya", fontSize = 24.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(12.dp))
         Card(shape = RoundedCornerShape(18.dp)) {
             Column {
+                ListItem(
+                    headlineContent = { Text("Tema") },
+                    supportingContent = { Text("Saat ini: ${themeMode.label}") },
+                    leadingContent = { Icon(Icons.Default.Brightness6, null) },
+                    modifier = Modifier.clickable { showThemePicker = true }
+                )
+                HorizontalDivider()
                 ListItem(
                     headlineContent = { Text("Backup & Restore") },
                     supportingContent = { Text("Data tetap berada di tangan Anda.") },
@@ -406,6 +459,43 @@ fun MoreScreen(onAddFuel: () -> Unit, onAddVehicle: () -> Unit) {
                 )
             }
         }
+    }
+
+    if (showThemePicker) {
+        AlertDialog(
+            onDismissRequest = { showThemePicker = false },
+            title = { Text("Pilih tema") },
+            text = {
+                Column {
+                    ThemeMode.values().forEach { mode ->
+                        ListItem(
+                            headlineContent = { Text(mode.label) },
+                            leadingContent = {
+                                Icon(
+                                    imageVector = Icons.Default.Brightness6,
+                                    contentDescription = null
+                                )
+                            },
+                            trailingContent = {
+                                RadioButton(
+                                    selected = themeMode == mode,
+                                    onClick = null
+                                )
+                            },
+                            modifier = Modifier.clickable {
+                                onThemeModeChange(mode)
+                                showThemePicker = false
+                            }
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showThemePicker = false }) {
+                    Text("Tutup")
+                }
+            }
+        )
     }
 }
 
