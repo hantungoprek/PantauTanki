@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -74,6 +76,10 @@ fun PantauTankiApp() {
     LaunchedEffect(Unit) {
         vehicles = db.vehicles()
         if (vehicles.isNotEmpty()) activeVehicleId = vehicles.first().id
+    }
+
+    LaunchedEffect(activeVehicleId) {
+        fuelEntries = if (activeVehicleId != -1L) db.entries(activeVehicleId) else emptyList()
     }
     var showAddFuel by remember { mutableStateOf(false) }
     var showAddVehicle by remember { mutableStateOf(false) }
@@ -157,13 +163,22 @@ fun PantauTankiApp() {
                     NavigationBarItem(
                         selected = selectedTab == 3,
                         onClick = { selectedTab = 3 },
+                        icon = { Icon(Icons.Default.History, null) },
+                        label = { Text("Riwayat") }
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == 4,
+                        onClick = { selectedTab = 4 },
                         icon = { Icon(Icons.Default.MoreHoriz, null) },
                         label = { Text("Lainnya") }
                     )
                 }
             }
         ) { padding ->
-            when (selectedTab) {
+            // Scaffold provides the space occupied by the TopAppBar and NavigationBar.
+            // Keep each screen inside that inset so content cannot render underneath the app bar.
+            Box(Modifier.fillMaxSize().padding(padding)) {
+                when (selectedTab) {
                 0 -> if (active != null) HomeScreen(active, monthCost, monthLiters, avgConsumption, activeEntries, currency)
                      else EmptyHomeScreen(onAddVehicle = { showAddVehicle = true })
 
@@ -183,7 +198,12 @@ fun PantauTankiApp() {
                         }
                     }
                 )
-                3 -> MoreScreen(
+                    3 -> HistoryScreen(
+                    vehicle = active,
+                    entries = activeEntries,
+                    currency = currency
+                )
+                4 -> MoreScreen(
                     themeMode = themeMode,
                     onThemeModeChange = {
                         themeMode = it
@@ -192,6 +212,7 @@ fun PantauTankiApp() {
                     onAddFuel = { showAddFuel = true },
                     onAddVehicle = { showAddVehicle = true }
                 )
+                }
             }
         }
 
@@ -345,6 +366,90 @@ fun SummaryCard(title: String, value: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
+fun HistoryScreen(
+    vehicle: Vehicle?,
+    entries: List<FuelEntry>,
+    currency: NumberFormat
+) {
+    val dateFormat = remember { SimpleDateFormat("dd MMM yyyy, HH:mm", Locale("id", "ID")) }
+
+    LazyColumn(
+        Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp)
+    ) {
+        item {
+            Text("Riwayat", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text(
+                vehicle?.name?.let { "Riwayat pengisian BBM • $it" } ?: "Belum ada kendaraan aktif",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        if (vehicle == null || entries.isEmpty()) {
+            item {
+                Card(shape = RoundedCornerShape(18.dp)) {
+                    Column(Modifier.padding(20.dp)) {
+                        Text("Belum ada riwayat pengisian BBM.", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Riwayat akan muncul setelah Anda mencatat pengisian BBM.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        } else {
+            items(entries.reversed(), key = { it.id }) { entry ->
+                Card(shape = RoundedCornerShape(18.dp)) {
+                    Column(Modifier.padding(16.dp)) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    dateFormat.format(Date(entry.timestamp)),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    "${entry.odometer} km",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 13.sp
+                                )
+                            }
+                            Text(
+                                currency.format(entry.total),
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        HorizontalDivider()
+                        Spacer(Modifier.height(10.dp))
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            HistoryMetric("Liter", "%.2f L".format(entry.liters))
+                            HistoryMetric("Harga/L", currency.format(entry.pricePerLiter))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun HistoryMetric(label: String, value: String) {
+    Column {
+        Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
 fun StatsScreen(vehicle: Vehicle, entries: List<FuelEntry>, currency: NumberFormat) {
     val liters = entries.sumOf { it.liters }
     val cost = entries.sumOf { it.total }
@@ -378,12 +483,22 @@ fun VehicleScreen(
 ) {
     var deleteTarget by remember { mutableStateOf<Vehicle?>(null) }
     Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top
+        ) {
+            Column(Modifier.weight(1f)) {
                 Text("Kendaraan", fontSize = 24.sp, fontWeight = FontWeight.Bold)
-                Text("Setiap profil menyimpan track record sendiri.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "Setiap profil menyimpan track record sendiri.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            IconButton(onClick = onAdd) { Icon(Icons.Default.Add, "Tambah kendaraan") }
+            IconButton(onClick = onAdd) {
+                Icon(Icons.Default.Add, "Tambah kendaraan")
+            }
         }
         Spacer(Modifier.height(12.dp))
         LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
